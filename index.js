@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = "3duNGys32gmPaDvgBVDoyXFy0LMkhb8P";
 
 // 🔁 For keeping Render alive (if deployed there)
-const SELF_URL = "https://mojotxdata.onrender.com/leaderboard/top14";
+const SELF_URL = "https://lobbedata.onrender.com/leaderboard/top14";
 
 let cachedData = [];
 
