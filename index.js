@@ -5,7 +5,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 🟢 Your Rainbet API Key
-const API_KEY = "3duNGys32gmPaDvgBVDoyXFy0LMkhb8P";
+const API_KEY = "1wbuMhjjF2pmxt8xDNKTZJYW6B1FRbUD";
 
 // 🔁 For keeping Render alive (if deployed there)
 const SELF_URL = "https://lobbedata.onrender.com/leaderboard/top14";
