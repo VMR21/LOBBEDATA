@@ -1,89 +1,74 @@
-import express from "express";
-import fetch from "node-fetch";
+const express = require('express');
+const cors = require('cors');
+const fetch = require('node-fetch');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
-// 🟢 Your Rainbet API Key
-const API_KEY = "1wbuMhjjF2pmxt8xDNKTZJYW6B1FRbUD";
+app.use(cors()); // ✅ Allow all origins
 
-// 🔁 For keeping Render alive (if deployed there)
-const SELF_URL = "https://lobbedata.onrender.com/leaderboard/top14";
-
-let cachedData = [];
-
-// ✅ Allow CORS
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-  next();
-});
-
-// ✅ Mask usernames like "mo****tx"
-function maskUsername(username) {
-  if (username.length <= 4) return username;
-  return username.slice(0, 2) + "***" + username.slice(-2);
-}
-
-// 🗓 Get current month's date range in YYYY-MM-DD format
-function getCurrentMonthRange() {
-  const now = new Date();
+// 🔁 Auto UTC month range
+function getCurrentMonthRangeUTC() {
+  const now = new Date(); // UTC
   const year = now.getUTCFullYear();
-  const month = now.getUTCMonth();
-  const start = new Date(Date.UTC(year, month, 1));
-  const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59));
-  const start_at = start.toISOString().split("T")[0];
-  const end_at = end.toISOString().split("T")[0];
-  return { start_at, end_at };
+  const month = now.getUTCMonth(); // 0-indexed
+
+  const start = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59)); // last day of the month
+
+  return [start, end];
 }
 
-// 🔁 Fetch and cache leaderboard
-async function fetchAndCacheData() {
+const [START_TIME, END_TIME] = getCurrentMonthRangeUTC();
+const START_DATE = START_TIME.toISOString().split('T')[0];
+const END_DATE = END_TIME.toISOString().split('T')[0];
+
+const API_URL = `https://services.rainbet.com/v1/external/affiliates?start_at=${START_DATE}&end_at=${END_DATE}&key=1wbuMhjjF2pmxt8xDNKTZJYW6B1FRbUD`;
+
+// === /api/leaderboard/rainbet ===
+app.get('/api/leaderboard/rainbet', async (req, res) => {
   try {
-    const { start_at, end_at } = getCurrentMonthRange();
-    const API_URL = `https://services.rainbet.com/v1/external/affiliates?start_at=${start_at}&end_at=${end_at}&key=${API_KEY}`;
-
     const response = await fetch(API_URL);
-    const json = await response.json();
-    if (!json.affiliates) throw new Error("No data");
+    const data = await response.json();
 
-    const sorted = json.affiliates.sort(
-      (a, b) => parseFloat(b.wagered_amount) - parseFloat(a.wagered_amount)
-    );
-
-    const top10 = sorted.slice(0, 10);
-
-    // Optional swap first two ranks
-    if (top10.length >= 2) [top10[0], top10[1]] = [top10[1], top10[0]];
-
-    cachedData = top10.map((entry) => ({
-      username: maskUsername(entry.username),
-      wagered: Math.round(parseFloat(entry.wagered_amount)),
-      weightedWager: Math.round(parseFloat(entry.wagered_amount)),
+    let leaderboard = data.affiliates.map(entry => ({
+      name: entry.username,
+      wager: parseFloat(entry.wagered_amount)
     }));
 
-    console.log(`[✅] Leaderboard updated for ${start_at} - ${end_at}`);
-  } catch (err) {
-    console.error("[❌] Failed to fetch Rainbet data:", err.message);
+    // 🔽 Sort by wager, descending
+    leaderboard.sort((a, b) => b.wager - a.wager);
+
+    // ✂️ Limit to top 10
+    leaderboard = leaderboard.slice(0, 10);
+
+    const prizes = [
+      1000, 750, 500, 300, 250, 200, 150, 100, 75, 50
+    ].map((reward, i) => ({ position: i + 1, reward }));
+
+    res.json({
+      leaderboard,
+      prizes,
+      startTime: START_TIME.toISOString(),
+      endTime: END_TIME.toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard data' });
   }
-}
-
-// 🔁 Initial fetch and repeat every 5 minutes
-fetchAndCacheData();
-setInterval(fetchAndCacheData, 5 * 60 * 1000);
-
-// 🔁 Self-ping every 4.5 minutes (for Render)
-setInterval(() => {
-  fetch(SELF_URL)
-    .then(() => console.log(`[🔁] Self-pinged ${SELF_URL}`))
-    .catch((err) => console.error("[⚠️] Self-ping failed:", err.message));
-}, 270000);
-
-// 📡 Endpoint to serve leaderboard data
-app.get("/leaderboard/top14", (req, res) => {
-  res.json(cachedData);
 });
 
-// 🚀 Start server
-app.listen(PORT, () => console.log(`🚀 Running on port ${PORT}`));
+// === /api/countdown/rainbet ===
+app.get('/api/countdown/rainbet', (req, res) => {
+  const now = new Date();
+  const total = END_TIME.getTime() - START_TIME.getTime();
+  const remaining = END_TIME.getTime() - now.getTime();
+  const percentageLeft = Math.max(0, Math.min(100, (remaining / total) * 100));
+
+  res.json({ percentageLeft: parseFloat(percentageLeft.toFixed(2)) });
+});
+
+// ✅ Start server
+app.listen(PORT, () => {
+  console.log(`🔥 Server running at http://localhost:${PORT}`);
+});
